@@ -4,8 +4,21 @@ import os
 import torch
 from torchvision import datasets, transforms, models
 
-import clip
+import open_clip
 from pytorchcv.model_provider import get_model as ptcv_get_model
+
+def _to_openclip_name(clip_name: str) -> str:
+    """Convert an OpenAI CLIP model name to the OpenCLIP model name format.
+
+    Examples:
+        'ViT-L/14'       -> 'ViT-L-14'
+        'ViT-B/16'       -> 'ViT-B-16'
+        'ViT-L/14@336px' -> 'ViT-L-14-336'
+        'RN50'           -> 'RN50'
+    """
+    name = clip_name.replace("/", "-")
+    name = name.replace("@336px", "-336")
+    return name
 
 DATASET_ROOTS = {
     "imagenet_train": "dataset/imagenet/train",
@@ -77,7 +90,11 @@ def get_target_model(target_name, device):
     
     if target_name.startswith("clip_"):
         target_name = target_name[5:]
-        model, preprocess = clip.load(target_name, device=device)
+        openclip_name = _to_openclip_name(target_name)
+        model, _, preprocess = open_clip.create_model_and_transforms(
+            openclip_name, pretrained="openai", device=device
+        )
+        model.eval()
         target_model = lambda x: model.encode_image(x).float()
     
     elif target_name == 'resnet18_places': 
