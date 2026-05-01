@@ -3,7 +3,7 @@
 import os
 import math
 import torch
-import clip
+import open_clip
 import utils.vlm_data_utils as data_utils
 
 from tqdm import tqdm
@@ -16,6 +16,32 @@ except ImportError:
     BICUBIC = Image.BICUBIC
 
 PM_SUFFIX = {"max":"_max", "avg":""}
+
+def _to_openclip_name(clip_name: str) -> str:
+    """Convert an OpenAI CLIP model name to the OpenCLIP model name format.
+
+    Delegates to the canonical implementation in vlm_data_utils to avoid
+    duplication.
+    """
+    return data_utils._to_openclip_name(clip_name)
+
+def _load_openclip(clip_name: str, device):
+    """Load an OpenCLIP model using OpenAI pretrained weights.
+
+    Returns (model, preprocess) matching the original clip.load() interface.
+    """
+    openclip_name = _to_openclip_name(clip_name)
+    model, _, preprocess = open_clip.create_model_and_transforms(
+        openclip_name, pretrained="openai", device=device
+    )
+    model.eval()
+    return model, preprocess
+
+def _openclip_tokenize(clip_name: str, texts, device):
+    """Tokenize *texts* using the OpenCLIP tokenizer for *clip_name*."""
+    openclip_name = _to_openclip_name(clip_name)
+    tokenizer = open_clip.get_tokenizer(openclip_name)
+    return tokenizer(texts).to(device)
 
 def save_target_activations(target_model, dataset, save_name, target_layers = ["layer4"], batch_size = 1000,
                             device = "cuda", pool_mode='avg'):
@@ -98,10 +124,10 @@ def save_activations(clip_name, target_name, target_layers, d_probe,
     if _all_saved(save_names):
         return
     
-    clip_model, clip_preprocess = clip.load(clip_name, device=device)
+    clip_model, clip_preprocess = _load_openclip(clip_name, device=device)
     
     if target_name.startswith("clip_"):
-        target_model, target_preprocess = clip.load(target_name[5:], device=device)
+        target_model, target_preprocess = _load_openclip(target_name[5:], device=device)
     else:
         target_model, target_preprocess = data_utils.get_target_model(target_name, device)
 
@@ -110,7 +136,7 @@ def save_activations(clip_name, target_name, target_layers, d_probe,
 
     with open(concept_set, 'r') as f: 
         words = (f.read()).split('\n')
-    text = clip.tokenize(["{}".format(word) for word in words]).to(device)
+    text = _openclip_tokenize(clip_name, ["{}".format(word) for word in words], device)
     
     save_clip_text_features(clip_model, text, text_save_name, batch_size)
     
